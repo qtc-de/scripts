@@ -1,0 +1,112 @@
+#!/usr/bin/python3
+
+import markdown2
+import argparse
+from pathlib import Path
+
+
+css_template = '<link rel="stylesheet" href="@:CSSPATH:@">'
+html_template = '''
+<html>
+    <head>
+        <title>@:TITLE:@</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        @:CSS:@
+        <style>
+            .markdown-body {
+                    box-sizing: border-box;
+                    min-width: 200px;
+                    max-width: 980px;
+                    margin: 0 auto;
+                    padding: 45px;
+            }
+
+            @media (max-width: 767px) {
+                    .markdown-body {
+                            padding: 15px;
+                    }
+            }
+
+            @:INLINE:@
+        </style>
+    </head>
+    <body>
+        <article class="markdown-body">
+            @:MARKDOWN:@
+        </article>
+    </body>
+</html>
+'''
+
+
+def create_html(content: str, title: str, wrap: bool, css: list[str]) -> str:
+    '''
+    Converts markdown formatted text into HTML and includes CSS and a title element.
+
+    Parameters:
+        content     The markdown formatted text to convert
+        title       The title to use for the HTML file
+        wrap        Whether to wrap text inside codeblocks
+        css         Paths to css files or directories
+
+    Return:
+        None
+    '''
+    template = html_template.replace('@:TITLE:@', title)
+
+    if wrap:
+        template = template.replace('@:INLINE:@', 'code { white-space : pre-wrap !important; }')
+    else:
+        template = template.replace('@:INLINE:@', '')
+
+    css_replace = []
+
+    for item in css:
+        item = Path(item)
+
+        if item.is_file():
+            css_replace.append(css_template.replace('@:CSSPATH:@', str(item.absolute())))
+
+        elif item.is_dir():
+            for child in item.glob('*.css'):
+                css_replace.append(css_template.replace('@:CSSPATH:@', str(child.absolute())))
+
+    template = template.replace('@:CSS:@', '\n\t\t'.join(css_replace))
+
+    html = markdown2.markdown(content, extras=['fenced-code-blocks', 'tables', 'header-ids'])
+    final_html = template.replace('@:MARKDOWN:@', html)
+
+    return final_html
+
+
+def main():
+    parser = argparse.ArgumentParser(description='''Convert markdown to HTML''')
+    parser.add_argument('file', type=argparse.FileType('r'), help='path of the markdown file')
+    parser.add_argument('output', nargs='?', help='path to desired output file')
+    parser.add_argument('--title', metavar='title', default='Document', help='Title for the document')
+    parser.add_argument('--wrap', action='store_true', help='wrap codeblocks')
+    parser.add_argument('--css', metavar='path', nargs='+', default=[], help='location of css files or folders to use')
+    args = parser.parse_args()
+
+    if args.output is None:
+        output = Path(args.file.name).with_suffix('.html')
+
+    else:
+        output = Path(args.output)
+
+    try:
+        print('[+] Parsing markdown file...')
+        html = create_html(args.file.read(), args.title, args.wrap, args.css)
+
+        print('[+] Writing HTML file...')
+        output.write_text(html)
+
+        print('[+] HTML generation finished :)')
+
+    except Exception as e:
+        print('[-] Caught unexpected exception while creating markdown file.')
+        print('[-] ' + str(e))
+        return
+
+
+main()
