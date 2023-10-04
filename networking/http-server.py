@@ -1,56 +1,92 @@
 #!/usr/bin/python3
 
 import argparse
-from termcolor import colored
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
-y = lambda s: colored(s, 'yellow')
-b = lambda s: colored(s, 'blue')
+y = lambda s: '\033[33m' + s + '\033[0m'
+b = lambda s: '\033[34m' + s + '\033[0m'
 
 
-def print_headers(headers: list[str]) -> None:
+def parse_headers(headers: list[str]) -> dict[str, str]:
     '''
-    Takes a list of HTTP header lines and prints them in a formatted way.
+    Takes a list of HTTP header lines and returns a corresponding
+    HTTP header dictionary.
 
     Parameters:
         headers         List of HTTP header lines
 
     Returns:
-        None
+        dictionary containing HTTP headers
     '''
+    header_dict = {}
+
     for header in headers:
 
-        try:
-            split = header.split(':')
+        key, value = header.split(':', 1)
 
-            if len(split) < 2:
-                raise ValueError(f'Invalid HTTP header: {header}')
+        if len(split) == 2:
+            header_dict[key] = value
 
-            header_name = split[0]
-            header_content = ':'.join(split[1:])
-            print(f"[+]     {b(header_name)}: {y(header_content)}")
 
-        except ValueError:
-            print(f"[+]     {header}")
+def print_headers(headers: dict[str, str]) -> None:
+    '''
+    Takes a HTTP header dict and prints it in a formatted way.
+
+    Parameters:
+        headers         HTTP header dict
+
+    Returns:
+        None
+    '''
+    for key, value in headers.items():
+        print(f'[+]     {b(key)}: {y(value)}')
 
 
 class Server(BaseHTTPRequestHandler):
 
-    def _set_response(self) -> None:
+    def _set_response(self, headers: dict[str, str]) -> None:
         '''
         Server always returns 200 OK status code and a HTML based response.
 
         Parameters:
-            None
+            headers           optional header dict for CORS access
 
         Returns:
             None
         '''
         self.send_response(200)
         self.send_header('Content-type', 'text/html')
+
+        if headers:
+            self.set_cors_headers(headers)
+
         self.end_headers()
         self.wfile.write(b'Thanks for your message :)\n')
+
+    def set_cors_headers(self, headers: dict[str, str]) -> None:
+        '''
+        Set Access-Control-Allow headers to allow CORS requests.
+
+        Parameters:
+            headers           header dict for CORS access
+
+        Returns:
+            None
+        '''
+        if 'Origin' in headers:
+            self.send_header('Access-Control-Allow-Origin', headers['Origin'])
+
+        else:
+            self.send_header('Access-Control-Allow-Origin', '*')
+
+        self.send_header('Access-Control-Allow-Credentials', 'true')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
+
+        if 'Access-Control-Request-Headers' in headers:
+            self.send_header('Access-Control-Allow-Headers', headers['Access-Control-Request-Headers'])
+        else:
+            self.send_header('Access-Control-Allow-Headers', 'content-type,private-token,user-agent')
 
     def do_GET(self) -> None:
         '''
@@ -66,10 +102,10 @@ class Server(BaseHTTPRequestHandler):
         print(f"[+] {b('Obtained')} {y('GET')} {b('Request')}.")
         print(f"[+]     {b('Path')}: {y(str(self.path))}")
 
-        headers = str(self.headers).splitlines()
+        headers = parse_headers(str(self.headers).splitlines())
         print_headers(headers)
 
-        self._set_response()
+        self._set_response(headers)
 
     def do_POST(self) -> None:
         '''
@@ -88,16 +124,39 @@ class Server(BaseHTTPRequestHandler):
         print(f"[+] {b('Obtained')} {y('POST')} {b('Request')}.")
         print(f"[+]     {b('Path')}: {y(str(self.path))}")
 
-        headers = str(self.headers).splitlines()
+        headers = parse_headers(str(self.headers).splitlines())
         print_headers(headers)
 
         try:
             print(f"[+]     {y(post_data.decode())}", end="\n")
+
         except UnicodeDecodeError:
             print(f"[+]     {post_data}", end="\n")
 
-        self._set_response()
+        self._set_response(headers)
         print("[+]")
+
+    def do_OPTIONS(self) -> None:
+        '''
+        For incoming OPTIONS requests, the server prints their associated path
+        and the contained HTTP headers. Afterwards it responds with permissive
+        CORS headers.
+
+        Parameters:
+            None
+
+        Returns:
+            None
+        '''
+        print(f"[+] {b('Obtained')} {y('OPTIONS')} {b('Request')}.")
+        print(f"[+]     {b('Path')}: {y(str(self.path))}")
+
+        headers = parse_headers(str(self.headers).splitlines())
+        print_headers(headers)
+
+        self.send_response(200, 'OK')
+        self.set_cors_headers(headers)
+        self.end_headers()
 
     def log_message(self, format, *args) -> None:
         '''
