@@ -10,6 +10,8 @@
 # specified, the script also enables forwarding
 # from the first, to the second interface.
 #
+# Caution! This script will wipe your local
+# firewall configuration!
 ###############################################
 #             Global Variables                #
 ###############################################
@@ -79,7 +81,7 @@ function enable_all()
 
     enable_link ${IF_FROM}
     enable_forwarding ${IF_FROM} ${IF_TO}
-    enable_dnsmasq ${IF_FROM}
+    enable_dnsmasq ${IF_FROM} 53
 }
 
 function disable_all()
@@ -96,12 +98,16 @@ function disable_all()
 
 function enable_dnsmasq()
 {
-    local INTERFACE
+    local INTERFACE DNS_PORT
+
     INTERFACE=$1
+    DNS_PORT=$2
+
     cat <<EOF > ${CONF}
 interface=${INTERFACE}
 bind-interfaces
 
+port=${DNS_PORT}
 dhcp-range=10.10.10.1,10.10.10.5,1h
 EOF
 
@@ -128,7 +134,7 @@ trap "disable_all $1" SIGINT
 
 if [ $# -eq 1 ]; then
     enable_link $1
-    enable_dnsmasq $1
+    enable_dnsmasq $1 0
 
 elif [ $# -eq 2 ]; then
     enable_all $1 $2
