@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 
 import argparse
+
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
@@ -23,10 +25,14 @@ def parse_headers(headers: list[str]) -> dict[str, str]:
 
     for header in headers:
 
-        key, value = header.split(':', 1)
-
-        if len(split) == 2:
+        try:
+            key, value = header.split(':', 1)
             header_dict[key] = value
+
+        except ValueError:
+            pass
+
+    return header_dict
 
 
 def print_headers(headers: dict[str, str]) -> None:
@@ -39,11 +45,16 @@ def print_headers(headers: dict[str, str]) -> None:
     Returns:
         None
     '''
-    for key, value in headers.items():
-        print(f'[+]     {b(key)}: {y(value)}')
+    if headers is not None:
+        for key, value in headers.items():
+            print(f'[+]     {b(key)}: {y(value)}')
 
 
 class Server(BaseHTTPRequestHandler):
+    '''
+    Extend BaseHTTPRequestHandler to add custom request handling.
+    '''
+    serve_files = False
 
     def _set_response(self, headers: dict[str, str]) -> None:
         '''
@@ -62,7 +73,6 @@ class Server(BaseHTTPRequestHandler):
             self.set_cors_headers(headers)
 
         self.end_headers()
-        self.wfile.write(b'Thanks for your message :)\n')
 
     def set_cors_headers(self, headers: dict[str, str]) -> None:
         '''
@@ -103,9 +113,19 @@ class Server(BaseHTTPRequestHandler):
         print(f"[+]     {b('Path')}: {y(str(self.path))}")
 
         headers = parse_headers(str(self.headers).splitlines())
-        print_headers(headers)
-
         self._set_response(headers)
+
+        if Server.serve_files:
+
+            file = Path(self.path.lstrip('/')).resolve()
+
+            if file.is_relative_to(Path.cwd()) and file.is_file():
+                content = file.read_bytes()
+                print(f"[+]     {b('Serving')}: {y(str(file))} ({len(content)} Bytes)")
+                self.wfile.write(content)
+
+            else:
+                print(f"[+]     {b('Serving')}: Nothing")
 
     def do_POST(self) -> None:
         '''
@@ -165,23 +185,29 @@ class Server(BaseHTTPRequestHandler):
         return
 
 
-def run(port: int = 8000) -> None:
+def run(port: int = 8000, files: bool = False) -> None:
     '''
     Start the HTTP server.
 
     Parameters:
-        port            The port number to listen on
+        port            port number to listen on
+        files           whether to allow file access
 
     Returns:
         None
     '''
+    if files:
+        Server.serve_files = True
+
     server_address = ('', port)
     httpd = HTTPServer(server_address, Server)
+
     print(f"[+] {b('Started webserver on port')} {y(str(port))}.")
     print(f'[+]')
 
     try:
         httpd.serve_forever()
+
     except KeyboardInterrupt:
         pass
 
@@ -191,6 +217,7 @@ def run(port: int = 8000) -> None:
 
 parser = argparse.ArgumentParser(description='''Simple HTTP server for monitoring incoming requests''')
 parser.add_argument('port', nargs='?', type=int, default=8000, help='the port to listen on (default: 8000)')
-args = parser.parse_args()
+parser.add_argument('--files', action='store_true', help='whether to serve files on GET requests')
 
-run(args.port)
+args = parser.parse_args()
+run(args.port, args.files)
